@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from db import get_connection
 import jwt
@@ -96,8 +96,8 @@ def get_film_by_id(film_id: int):
             raise HTTPException(status_code=404, detail="Film non trouvé")
         return dict(res)
 
-   
-    
+
+
 class UserRegister(BaseModel):
     email: str
     pseudo: str
@@ -118,22 +118,22 @@ def create_access_token(data: dict):
 def register(user: UserRegister):
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT ID FROM Utilisateur WHERE Email = ?", (user.email,))
+        cursor.execute("SELECT ID FROM Utilisateur WHERE AdresseMail = ?", (user.email,))
+        
         if cursor.fetchone():
             raise HTTPException(status_code=400, detail="Cet email est déjà pris.")
         
         cursor.execute("SELECT ID FROM Utilisateur WHERE Pseudo = ?", (user.pseudo,))
         if cursor.fetchone():
-            raise HTTPException(status_code=400, detail="Cet email est déjà pris.")
+            raise HTTPException(status_code=400, detail="Ce pseudo est déjà pris.")
         
         cursor.execute("""
-                INSERT INTO Utilisateur (Email, Pseudo, Password) 
+                INSERT INTO Utilisateur (AdresseMail, Pseudo, MotDePasse) 
                 VALUES (?, ?, ?)
                 """,
                 (user.email, user.pseudo, user.password))
         
-        token = jwt.encode(to_encode, SECRET_KEY, algorithm="HS256")
-
+        user_id = cursor.lastrowid
     
     token = create_access_token(data={"user_id": str(user_id)})
     return TokenResponse(access_token=token, token_type="bearer")
