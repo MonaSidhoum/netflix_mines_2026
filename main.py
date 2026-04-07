@@ -59,7 +59,7 @@ def  get_films(page: int = 1, per_page: int = 20, genre_id: int = None):
         offset = (page-1)*per_page
         params.append(per_page)
         params.append(offset)
-        cursor.execute(f"SELECT * FROM Film {condition} LIMIT ? OFFSET ?", params)
+        cursor.execute(f"SELECT * FROM Film {condition} ORDER BY DateSortie desc LIMIT ? OFFSET ? ", params)
         res = cursor.fetchall()
         data = [dict(resultat) for resultat in res]
 
