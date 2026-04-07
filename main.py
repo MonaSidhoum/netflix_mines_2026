@@ -73,6 +73,22 @@ def get_film_by_id(film_id: int):
         cursor.execute("SELECT * FROM Film WHERE ID = ?", (film_id,))
         res = cursor.fetchone()
         return dict(res)
+    
+class GenreResponse(BaseModel):
+    ID : int
+    Type : str
+    
+@app.get("/genres", response_model=list[GenreResponse])
+def  get_genres():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute(f"SELECT * FROM Genre ")
+        res = cursor.fetchall()
+        data = [dict(resultat) for resultat in res]
+
+
+    return data
 
 
 
