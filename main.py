@@ -66,6 +66,17 @@ def  get_films(page: int = 1, per_page: int = 20, genre_id: int = None):
 
     return {"data": data , "page": page, "per_page": per_page, "total": nb_total_films}
 
+@app.get("/films/{film_id}", response_model=Film)
+def get_film_by_id(film_id: int):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM Film WHERE ID = ?", (film_id,))
+        res = cursor.fetchone()
+        return dict(res)
+
+
+
+
 if __name__ == "__main__":
     import uvicorn
 
