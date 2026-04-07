@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from db import get_connection
+import jwt
 
 app = FastAPI()
 
@@ -72,8 +73,49 @@ def get_film_by_id(film_id: int):
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM Film WHERE ID = ?", (film_id,))
         res = cursor.fetchone()
+        if res is None:
+            raise HTTPException(status_code=404, detail="Film non trouvé")
         return dict(res)
+    
+class UserRegister(BaseModel):
+    email: str
+    pseudo: str
+    password: str
 
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(hours=24) #on a accès une journée
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode,"cle_secrete_longue_pour_netflix_mines_2026", algorithm="HS256")
+    return encoded_jwt
+
+@app.post("/auth/register", response_model=TokenResponse)
+def register(user: UserRegister):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT ID FROM Utilisateur WHERE Email = ?", (user.email,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Cet email est déjà pris.")
+        
+        cursor.execute("SELECT ID FROM Utilisateur WHERE Pseudo = ?", (user.pseudo,))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Cet email est déjà pris.")
+        
+        cursor.execute("""
+                INSERT INTO Utilisateur (Email, Pseudo, Password) 
+                VALUES (?, ?, ?)
+                """,
+                (user.email, user.pseudo, user.password))
+        
+        token = jwt.encode(to_encode, SECRET_KEY, algorithm="HS256")
+
+    
+    token = create_access_token(data={"user_id": str(user_id)})
+    return TokenResponse(access_token=token, token_type="bearer")
 
 
 
