@@ -67,6 +67,25 @@ def  get_films(page: int = 1, per_page: int = 20, genre_id: int = None):
 
     return {"data": data , "page": page, "per_page": per_page, "total": nb_total_films}
 
+
+class GenreResponse(BaseModel):
+    ID : int
+    Type : str
+    
+@app.get("/genres", response_model=list[GenreResponse])
+def  get_genres():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute(f"SELECT * FROM Genre ")
+        res = cursor.fetchall()
+        data = [dict(resultat) for resultat in res]
+
+
+    return data
+
+
+
 @app.get("/films/{film_id}", response_model=Film)
 def get_film_by_id(film_id: int):
     with get_connection() as conn:
@@ -76,6 +95,8 @@ def get_film_by_id(film_id: int):
         if res is None:
             raise HTTPException(status_code=404, detail="Film non trouvé")
         return dict(res)
+
+   
     
 class UserRegister(BaseModel):
     email: str
