@@ -180,6 +180,8 @@ def login(user: UserLogin):
 
 security = HTTPBearer()
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if credentials is None:
+        raise HTTPException(status_code=422, detail="Pas de token")
     token = credentials.credentials
     try:
         payload = jwt.decode(token, "cle_secrete_longue_pour_netflix_mines_2026", algorithms=["HS256"]) # on prend le token et on le check en utiliant notre clé super secrète
