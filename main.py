@@ -3,6 +3,11 @@ from pydantic import BaseModel
 from db import get_connection
 import jwt
 from datetime import datetime, timedelta, timezone
+import bcrypt
+
+
+
+
 app = FastAPI()
 
 
@@ -114,6 +119,20 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode,"cle_secrete_longue_pour_netflix_mines_2026", algorithm="HS256")
     return encoded_jwt
 
+#avant de rajouter register, il faut qu'on hache les mots de passe pour ne pas les stocker en clair
+
+def hash_pwd(password: str):
+    bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(bytes, salt).decode('utf-8') #parce qu'on veut stocker du texte
+
+#il nous faut une fonction pour vérifier que le hash stocké correspond bien au mdp renseigné
+def verify_pwd(original_password: str, hashed_password: str):
+    password_byte = original_password.encode('utf-8')
+    hashed_password_byte = hashed_password.encode('utf-8')
+    return bcrypt.checkpw(password_byte, hashed_password_byte)
+
+
 @app.post("/auth/register", response_model=TokenResponse)
 def register(user: UserRegister):
     with get_connection() as conn:
@@ -121,7 +140,7 @@ def register(user: UserRegister):
         cursor.execute("SELECT ID FROM Utilisateur WHERE AdresseMail = ?", (user.email,))
         
         if cursor.fetchone():
-            raise HTTPException(status_code=400, detail="Cet email est déjà pris.")
+            raise HTTPException(status_code=409, detail="Cet email est déjà pris.")
         
         cursor.execute("SELECT ID FROM Utilisateur WHERE Pseudo = ?", (user.pseudo,))
         if cursor.fetchone():
@@ -131,7 +150,7 @@ def register(user: UserRegister):
                 INSERT INTO Utilisateur (AdresseMail, Pseudo, MotDePasse) 
                 VALUES (?, ?, ?)
                 """,
-                (user.email, user.pseudo, user.password))
+                (user.email, user.pseudo, hash_pwd(user.password)))
         
         user_id = cursor.lastrowid
     
