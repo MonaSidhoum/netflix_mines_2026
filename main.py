@@ -1,11 +1,11 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from db import get_connection
 import jwt
 from datetime import datetime, timedelta, timezone
 import bcrypt
-
-
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+import sqlite3
 
 
 app = FastAPI()
@@ -15,7 +15,7 @@ app = FastAPI()
 def ping():
     return {"message": "pong"}
 
-class Film(BaseModel):
+class FilmResponse(BaseModel):
     ID: int | None = None
     Nom: str
     Note: float | None = None
@@ -25,12 +25,11 @@ class Film(BaseModel):
     Genre_ID: int | None = None
 
 @app.post("/film")
-async def createFilm(film : Film):
+async def createFilm(film : FilmResponse):
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(f"""
-            INSERT INTO Film (Nom,Note,DateSortie,Image,Video)  
-            VALUES('{film.nom}',{film.note},{film.dateSortie},'{film.image}','{film.video}') RETURNING *
+            INSERT INTO Film (Nom,Note,DateSortie,Image,Video) VALUES('{film.nom}',{film.note},{film.dateSortie},'{film.image}','{film.video}') RETURNING *
             """)
         res = cursor.fetchone()
         print(res)
@@ -38,7 +37,7 @@ async def createFilm(film : Film):
 
 
 class PaginatedResponse(BaseModel):
-    data: list[Film]
+    data: list[FilmResponse]
     page: int
     per_page: int
     total: int
@@ -91,7 +90,7 @@ def  get_genres():
 
 
 
-@app.get("/films/{film_id}", response_model=Film)
+@app.get("/films/{film_id}", response_model=FilmResponse)
 def get_film_by_id(film_id: int):
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -140,10 +139,9 @@ def register(user: UserRegister):
             raise HTTPException(status_code=400, detail="Ce pseudo est déjà pris.")
         
         cursor.execute("""
-                INSERT INTO Utilisateur (AdresseMail, Pseudo, MotDePasse) 
-                VALUES (?, ?, ?)
-                """,
-                (user.email, user.pseudo, hash_pwd(user.password)))
+                       INSERT INTO Utilisateur (AdresseMail, Pseudo, MotDePasse) VALUES (?, ?, ?)
+                       """,
+                       (user.email, user.pseudo, hash_pwd(user.password)))
         
         user_id = cursor.lastrowid
     
@@ -180,7 +178,82 @@ def login(user: UserLogin):
     
     return TokenResponse(access_token=token, token_type="bearer")
 
+security = HTTPBearer()
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, "cle_secrete_longue_pour_netflix_mines_2026", algorithms=["HS256"]) # on prend le token et on le check en utiliant notre clé super secrète
+        user_id = payload.get("user_id")
+        return user_id
+        
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expiré: reconnectez-vous")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token bidon")
+    
 
+class PreferenceRequest(BaseModel):
+    genre_id: int
+
+@app.post("/preferences", status_code=201)
+def add_preference(preference: PreferenceRequest, user_id: str = Depends(get_current_user)): #on vérifie qu'on est connecté
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT ID FROM Genre WHERE ID = ?", (preference.genre_id,))
+        
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Genre inexistant")
+        
+        try:
+            cursor.execute("""
+                INSERT INTO Genre_Utilisateur (ID_Genre, ID_User) VALUES (?, ?)
+                """, 
+                (preference.genre_id, int(user_id)) 
+            )
+        except sqlite3.IntegrityError: #on veut pas de doublons, ça plante si y'en a un cf. schema.sql
+            raise HTTPException(status_code=409, detail="Ce genre est déjà dans vos favoris")
+            
+    return {"message": "Genre ajouté aux favoris"}
+
+
+
+@app.delete("/preferences/{genre_id}")
+def remove_preference(genre_id: int, user_id: str = Depends(get_current_user)):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM Genre_Utilisateur WHERE ID_Genre = ? AND ID_User = ?
+            """, 
+            (genre_id, int(user_id))
+        )
+
+        if cursor.rowcount == 0: # ça nous dit combien de lignes ont été effacées
+            raise HTTPException(status_code=404, detail="Ce genre n'est pas dans vos favoris")
+            
+    return {"message": "Genre retiré des favoris"}
+
+
+@app.get("/preferences/recommendations", response_model=list[FilmResponse])
+def get_recommendations(user_id: str = Depends(get_current_user)):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT Film.* FROM Film
+            JOIN Genre_Utilisateur ON Film.Genre_ID = Genre_Utilisateur.ID_Genre 
+            WHERE Genre_Utilisateur.ID_User = ?
+            ORDER BY Film.DateSortie DESC  
+            LIMIT 5
+            """, 
+            (int(user_id),)
+        )
+        # en gros on a fait quoi ? 
+        # on colle la table Film à la table genre_utilisateur en faisant correspondre genre_id de film et id_genre des favoris
+        # on filtre pour garder que notre utilisateur
+        # on veut des recommandations triées par date décroissante
+        
+        res = cursor.fetchall()
+        data = [dict(row) for row in res]
+    return data
 
 
 
