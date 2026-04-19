@@ -126,13 +126,6 @@ def hash_pwd(password: str):
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(bytes, salt).decode('utf-8') #parce qu'on veut stocker du texte
 
-#il nous faut une fonction pour vérifier que le hash stocké correspond bien au mdp renseigné
-def verify_pwd(original_password: str, hashed_password: str):
-    password_byte = original_password.encode('utf-8')
-    hashed_password_byte = hashed_password.encode('utf-8')
-    return bcrypt.checkpw(password_byte, hashed_password_byte)
-
-
 @app.post("/auth/register", response_model=TokenResponse)
 def register(user: UserRegister):
     with get_connection() as conn:
@@ -156,6 +149,39 @@ def register(user: UserRegister):
     
     token = create_access_token(data={"user_id": str(user_id)})
     return TokenResponse(access_token=token, token_type="bearer")
+
+#il nous faut une fonction pour vérifier que le hash stocké correspond bien au mdp renseigné
+def verify_pwd(original_password: str, hashed_password: str):
+    password_byte = original_password.encode('utf-8')
+    hashed_password_byte = hashed_password.encode('utf-8')
+    return bcrypt.checkpw(password_byte, hashed_password_byte)
+
+
+class UserLogin(BaseModel):
+    email : str
+    password: str
+
+@app.post("/auth/login", response_model=TokenResponse)
+def login(user: UserLogin):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT ID, MotDePasse FROM Utilisateur WHERE AdresseMail = ?", (user.email,))
+        db_user = cursor.fetchone()
+        
+        if db_user is None:
+            raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect") # on ne dit pas juste que l'email n'existe pas par sécurité sinon qqun de malveillant pourrait juste faire plein de requêtes pour savoir quelles adresses sont dans notre base de données
+       
+        user_id = db_user["ID"]
+        hashed_password = db_user["MotDePasse"]
+        if not verify_pwd(user.password, hashed_password):
+            raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+            
+    token = create_access_token(data={"user_id": user_id})
+    
+    return TokenResponse(access_token=token, token_type="bearer")
+
+
+
 
 
 
